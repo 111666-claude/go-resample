@@ -58,6 +58,39 @@ Streaming notes:
 - A `Resampler` is not safe for concurrent use; use one per stream. Separate
   `Resampler`s can run in parallel freely (filter tables are shared read-only).
 
+### Drift correction
+
+A USB capture device and the output clock are independent oscillators; their
+rates typically differ by tens of ppm, which accumulates into A/V
+desynchronisation over a long recording. `DriftCorrector` estimates the offset
+from the device timestamp of each block and drives the resampler's `Ratio`:
+
+```go
+c, _ := resample.NewDriftCorrector(resample.DefaultDriftConfig(inRate, outRate, ratio))
+
+// For each captured block, pass its timestamp and the cumulative input frame
+// position; the corrected ratio is written into d.Ratio.
+diag, err := c.Process(r, d, resample.Observation{
+    DeviceTime:  blockTimestamp, // seconds, any monotonic time base
+    InputFrames: totalInputFrames,
+})
+```
+
+- The drift estimate is a weighted least-squares fit of captured frames
+  against device time over a sliding window. Only input-side quantities enter
+  the fit, so the corrector cannot chase its own correction; the time-proportional
+  weights make the estimate independent of the block size.
+- A phase-locked term drives accumulated phase error to zero, and every ratio
+  change is **hard-clamped** (`MaxCorrection`, default 5%) and **slew-rate
+  limited** (`SlewPerSecond`, default 0.2%/s), so short timestamp jitter never
+  produces an audible correction.
+- Recovery is defined for every malformed input and reported in
+  `DriftDiagnostics`: NaN/Inf and missing timestamps hold the last ratio,
+  small backwards steps are ignored as reorders, large backwards steps and
+  forward gaps re-anchor (device restart), silent blocks freeze adaptation,
+  and an overfull input buffer gets a bounded temporary ratio boost to drain.
+- Like `Process`, `Observe` performs no heap allocations once warmed up.
+
 Requires Go 1.22 or later.
 
 ## Quality

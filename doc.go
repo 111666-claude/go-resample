@@ -24,4 +24,25 @@
 //
 // For streaming, create a [Resampler] and call [Resampler.Process] repeatedly,
 // setting Data.EndOfInput on the final call.
+//
+// # Drift correction
+//
+// Independent capture and playback clocks (a USB sound card versus the output
+// clock) typically differ by a few to a few hundred parts per million, which
+// accumulates into audible audio/video desynchronisation on long recordings.
+// [DriftCorrector] estimates that offset from the device timestamp of each
+// captured block and drives the Resampler's Ratio to keep the re-timed stream
+// aligned with the target clock:
+//
+//	c, _ := resample.NewDriftCorrector(resample.DefaultDriftConfig(inRate, outRate, ratio))
+//	diag, err := c.Process(r, d, resample.Observation{
+//	    DeviceTime: blockTimestamp, InputFrames: totalInputFrames,
+//	})
+//
+// The estimate is a weighted least-squares fit over a sliding time window
+// (block-size independent), combined with a phase-locked term, and every ratio
+// change is hard-clamped and slew-rate limited so timestamp jitter never
+// causes an audible correction. Backwards or missing timestamps, device
+// restarts, silence, buffer overfill and non-finite times each take a defined
+// recovery path reported through [DriftDiagnostics].
 package resample

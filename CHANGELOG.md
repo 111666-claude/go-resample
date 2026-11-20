@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Timestamp-driven clock-drift correction (`DriftCorrector`). It estimates the
+  ppm offset between a capture device clock and the target output clock from
+  per-block device timestamps, using a weighted least-squares fit over a
+  sliding time window (weights are proportional to elapsed time, so changing
+  the block size does not change the estimate), plus a phase-locked term that
+  drives accumulated phase error to zero. It drives the existing resampler
+  `Ratio`, hard-clamped (`MaxCorrection`) and slew-rate limited
+  (`SlewPerSecond`), so short timestamp jitter never causes an audible
+  correction. Defined recovery paths cover NaN/Inf and missing timestamps,
+  backwards steps (reorder vs. device restart), frozen clocks, silence, and
+  buffer overfill, all reported through `DriftDiagnostics`. `Observe` makes no
+  heap allocations once warmed up.
+- `DriftCorrector.Process` convenience wrapper and a runnable
+  `ExampleDriftCorrector`.
+- Simulation tests with two independent drifting clocks (fast and slow, with
+  timestamp jitter, variable block sizes and an injected device restart) that
+  verify the final timing error, output continuity, ppm convergence, block-size
+  invariance, and every recovery path.
+
 ## [1.1.0] - 2026-11-05
 
 ### Added

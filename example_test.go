@@ -63,3 +63,44 @@ func ExampleResampler_Process() {
 	fmt.Println("output frames:", total)
 	// Output: output frames: 48000
 }
+
+// Correct clock drift between a USB capture device and the output clock. The
+// DriftCorrector observes each block's device timestamp and produces a
+// smoothed, clamped ratio that keeps long recordings aligned.
+func ExampleDriftCorrector() {
+	const (
+		inRate, outRate = 48000, 48000
+		block           = inRate / 50 // 20 ms
+	)
+	r, err := resample.New(resample.Linear, 1)
+	if err != nil {
+		panic(err)
+	}
+	c, err := resample.NewDriftCorrector(resample.DefaultDriftConfig(inRate, outRate, 1.0))
+	if err != nil {
+		panic(err)
+	}
+
+	// Simulate a device clock running 120 ppm fast: over one second its
+	// timestamp advances 1 s - 120 us.
+	inputPos := 0
+	for i := 0; i < 50; i++ {
+		inputPos += block
+		devTime := float64(inputPos) / inRate * (1.0 - 120e-6)
+		out := make([]float32, block+64)
+		d := &resample.Data{
+			In: make([]float32, block), InputFrames: block,
+			Out: out, OutputFrames: len(out),
+		}
+		diag, err := c.Process(r, d, resample.Observation{
+			DeviceTime: devTime, InputFrames: inputPos,
+		})
+		if err != nil {
+			panic(err)
+		}
+		if i == 49 {
+			fmt.Printf("drift estimate: %.0f ppm\n", diag.DriftPPM)
+		}
+	}
+	// Output: drift estimate: 120 ppm
+}
